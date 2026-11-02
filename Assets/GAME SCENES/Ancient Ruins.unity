@@ -10561,7 +10561,7 @@ PrefabInstance:
     - target: {fileID: 7257719084983945652, guid: 357fd6c1d93433041b3da915d51da5d5, type: 3}
       propertyPath: detectedClip
       value: 
-      objectReference: {fileID: 8300000, guid: 9b1e69a81f50eee4b9ac92ea3841b207, type: 3}
+      objectReference: {fileID: 8300000, guid: 6c3955a2ccd4aba4bb12924d57d024fa, type: 3}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
