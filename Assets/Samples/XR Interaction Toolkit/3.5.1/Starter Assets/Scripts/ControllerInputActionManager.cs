@@ -68,6 +68,10 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets
         InputActionReference m_Move;
 
         [SerializeField]
+        [Tooltip("The reference to the action of jumping with this controller.")]
+        InputActionReference m_Jump;
+
+        [SerializeField]
         [Tooltip("The reference to the action of scrolling UI with this controller.")]
         InputActionReference m_UIScroll;
 
@@ -413,6 +417,8 @@ namespace UnityEngine.XR.Interaction.Toolkit.Samples.StarterAssets
         {
             m_StartCalled = true;
 
+                        EnableAction(m_Jump);   // make sure jump is always listening
+            
             // Ensure the enabled state of locomotion and turn actions are properly set up.
             // Called in Start so it is done after the InputActionManager enables all input actions earlier in OnEnable.
             UpdateLocomotionActions();

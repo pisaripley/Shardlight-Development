@@ -20,6 +20,10 @@ namespace Project.Forest
         Transform view;
         float pitch;
         float verticalSpeed;
+        public float jumpHeight = 1f;          // standing jump, metres
+        public float maxJumpHeight = 1.2f;     // hard cap, even when sprinting
+        [Range(0f, 1f)] public float airControl = 0.3f;   // how much you can steer mid-air
+        Vector3 airVelocity;                   // run speed carried into the jump
 
         void Start()
         {
@@ -79,10 +83,22 @@ namespace Project.Forest
             }
             movement = Vector2.ClampMagnitude(movement, 1f);
             float speed = keyboard != null && keyboard.leftShiftKey.isPressed ? sprintSpeed : walkSpeed;
-            if (body.isGrounded && verticalSpeed < 0f) verticalSpeed = -2f;
-            verticalSpeed += Physics.gravity.y * Time.deltaTime;
             var velocity = (transform.right * movement.x + transform.forward * movement.y) * speed;
-            body.Move((velocity + Vector3.up * verticalSpeed) * Time.deltaTime);
+            bool grounded = body.isGrounded;
+            if (grounded && verticalSpeed < 0f) verticalSpeed = -2f;
+
+            if (grounded) airVelocity = velocity;                                  // remember how fast you're running
+            else velocity = Vector3.Lerp(airVelocity, velocity, airControl);       // in the air: momentum + a little steering
+
+            if (grounded && Cursor.lockState == CursorLockMode.Locked && keyboard != null && keyboard.spaceKey.wasPressedThisFrame)
+            {
+                float h = Mathf.Min(jumpHeight + airVelocity.magnitude * 0.04f, maxJumpHeight);   // sprinting adds a bit, capped
+                verticalSpeed = Mathf.Sqrt(2f * -Physics.gravity.y * h);
+            }
+
+            verticalSpeed += Physics.gravity.y * Time.deltaTime;
+            var hit = body.Move((velocity + Vector3.up * verticalSpeed) * Time.deltaTime);
+            if ((hit & CollisionFlags.Above) != 0 && verticalSpeed > 0f) verticalSpeed = 0f;     // bonk on ceilings
         }
 
         void OnApplicationFocus(bool focused) { if (!focused && DesktopActive) ReleaseCursor(); }

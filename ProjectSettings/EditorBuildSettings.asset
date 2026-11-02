@@ -6,8 +6,20 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
-    path: Assets/Scenes/SampleScene.unity
+    path: Assets/MainMenu.unity
+    guid: d18ba5006e91f6141952c190c7359168
+  - enabled: 0
+    path: Assets/GAME SCENES/SampleScene.unity
     guid: 55daccc09a3b69647bbab145b54a3ab3
+  - enabled: 1
+    path: Assets/GAME SCENES/Forest.unity
+    guid: bfa98e887fa954544b66c9621ac0452e
+  - enabled: 1
+    path: Assets/GAME SCENES/Mountain Pass.unity
+    guid: ad75e09d49c85954facbc6b126220d15
+  - enabled: 1
+    path: Assets/GAME SCENES/Ancient Ruins.unity
+    guid: 7ca69f4718a19724caab6eddb3bd1708
   m_configObjects:
     Unity.XR.Oculus.Settings: {fileID: 11400000, guid: bfa1182bd221b4ca89619141f66f1260, type: 2}
     Unity.XR.WindowsMR.Settings: {fileID: 11400000, guid: dc5a169419fa04987b057f65238cf3ba, type: 2}
