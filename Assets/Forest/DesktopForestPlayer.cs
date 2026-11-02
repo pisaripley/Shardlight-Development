@@ -1,4 +1,6 @@
+using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.XR.Management;
 using UnityEngine.InputSystem;
 using UnityEngine.XR;
 using Unity.XR.CoreUtils;
@@ -6,6 +8,21 @@ using UnityEngine.XR.Interaction.Toolkit.Inputs;
 
 namespace Project.Forest
 {
+    // A loader can be initialized before isDeviceActive becomes true (headset wake / Link startup).
+    // Share this decision with the HUD, menus and wrist inventory.
+    public static class PlayerRuntimeMode
+    {
+        public static bool VRActive
+        {
+            get
+            {
+                if (XRSettings.isDeviceActive) return true;
+                var settings = XRGeneralSettings.Instance;
+                return settings != null && settings.Manager != null && settings.Manager.activeLoader != null;
+            }
+        }
+    }
+
     // Desktop fallback for the copied XR player. The forest itself is saved scene content.
     [DefaultExecutionOrder(-100)]
     [RequireComponent(typeof(CharacterController))]
@@ -25,24 +42,61 @@ namespace Project.Forest
         [Range(0f, 1f)] public float airControl = 0.3f;   // how much you can steer mid-air
         Vector3 airVelocity;                   // run speed carried into the jump
 
+        readonly List<Behaviour> disabledXR = new List<Behaviour>();
+        readonly Dictionary<GameObject, bool> visuals = new Dictionary<GameObject, bool>();
+        XROrigin rig;
+        Vector3 savedCameraPosition, savedFloorOffset, savedCenter;
+        Quaternion savedCameraRotation;
+        float savedHeight, savedRadius, savedStepOffset, savedSkinWidth, savedMinMove;
+        bool savedBodyEnabled;
+
         void Start()
         {
-            if (XRSettings.isDeviceActive) return;
-            var origin = GetComponentInChildren<XROrigin>(true);
-            if (origin == null || origin.Camera == null) { enabled = false; return; }
+            rig = GetComponentInChildren<XROrigin>(true);
+            if (rig == null || rig.Camera == null) { enabled = false; return; }
             body = GetComponent<CharacterController>();
-            view = origin.Camera.transform;
-            // Tracking and XR locomotion must not overwrite the keyboard camera pose.
+            view = rig.Camera.transform;
+            if (!PlayerRuntimeMode.VRActive) EnterDesktopMode();
+        }
+
+        void EnterDesktopMode()
+        {
+            savedCameraPosition = view.localPosition;
+            savedCameraRotation = view.localRotation;
+            if (rig.CameraFloorOffsetObject)
+                savedFloorOffset = rig.CameraFloorOffsetObject.transform.localPosition;
+            savedBodyEnabled = body.enabled;
+            savedHeight = body.height;
+            savedRadius = body.radius;
+            savedCenter = body.center;
+            savedStepOffset = body.stepOffset;
+            savedSkinWidth = body.skinWidth;
+            savedMinMove = body.minMoveDistance;
+            // Only suspend XR components; keep gameplay scripts and the mode detector alive.
             foreach (var behaviour in GetComponentsInChildren<MonoBehaviour>(true))
-                if (behaviour != null && behaviour != this &&
-                    behaviour.GetType().Name != "UniversalAdditionalCameraData")
+            {
+                if (!behaviour || !behaviour.enabled || behaviour == this) continue;
+                string ns = behaviour.GetType().Namespace ?? "";
+                if (ns.StartsWith("UnityEngine.XR.Interaction.Toolkit") ||
+                    ns.StartsWith("UnityEngine.XR.Hands") ||
+                    ns.StartsWith("UnityEngine.InputSystem.XR") ||
+                    ns.StartsWith("Unity.XR.CoreUtils") ||
+                    ns == "Project.HandTracking")
+                {
+                    disabledXR.Add(behaviour);
                     behaviour.enabled = false;
+                }
+            }
             foreach (var modality in GetComponentsInChildren<XRInputModalityManager>(true))
                 foreach (var visual in new[] { modality.leftHand, modality.rightHand,
                              modality.leftController, modality.rightController })
-                    if (visual != null) visual.SetActive(false);
-            if (origin.CameraFloorOffsetObject != null)
-                origin.CameraFloorOffsetObject.transform.localPosition = Vector3.zero;
+                    if (visual && !visuals.ContainsKey(visual))
+                    {
+                        visuals.Add(visual, visual.activeSelf);
+                        visual.SetActive(false);
+                    }
+            if (rig.CameraFloorOffsetObject)
+                rig.CameraFloorOffsetObject.transform.localPosition = Vector3.zero;
             view.localPosition = Vector3.up * eyeHeight;
             view.localRotation = Quaternion.identity;
             body.enabled = false;
@@ -56,8 +110,33 @@ namespace Project.Forest
             DesktopActive = true;
         }
 
+        void RestoreXRMode()
+        {
+            DesktopActive = false;
+            ReleaseCursor();
+            body.enabled = false;
+            body.height = savedHeight;
+            body.radius = savedRadius;
+            body.center = savedCenter;
+            body.stepOffset = savedStepOffset;
+            body.skinWidth = savedSkinWidth;
+            body.minMoveDistance = savedMinMove;
+            body.enabled = savedBodyEnabled;
+            if (rig.CameraFloorOffsetObject)
+                rig.CameraFloorOffsetObject.transform.localPosition = savedFloorOffset;
+            view.localPosition = savedCameraPosition;
+            view.localRotation = savedCameraRotation;
+            foreach (var pair in visuals)
+                if (pair.Key) pair.Key.SetActive(pair.Value);
+            visuals.Clear();
+            foreach (var behaviour in disabledXR)
+                if (behaviour) behaviour.enabled = true;
+            disabledXR.Clear();
+            Debug.Log("[Player] XR became available; restored hand/controller tracking and locomotion.", this);
+        }
         void Update()
         {
+            if (DesktopActive && PlayerRuntimeMode.VRActive) RestoreXRMode();
             if (!DesktopActive || !Application.isFocused) return;
             var keyboard = Keyboard.current;
             var mouse = Mouse.current;

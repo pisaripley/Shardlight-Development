@@ -1209,6 +1209,28 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: bb40a7ae0b6c4e34790acb5ea084ae09, type: 3}
+--- !u!114 &632934719 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 5260231889667551636, guid: bb40a7ae0b6c4e34790acb5ea084ae09, type: 3}
+  m_PrefabInstance: {fileID: 632934718}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 01f69dc1cb084aa42b2f2f8cd87bc770, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &632934720 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 35963182558885336, guid: bb40a7ae0b6c4e34790acb5ea084ae09, type: 3}
+  m_PrefabInstance: {fileID: 632934718}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e0cb9aa70a22847b5925ee5f067c10a9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1001 &696359889
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -2302,8 +2324,63 @@ PrefabInstance:
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 3065712455648138979, guid: 357fd6c1d93433041b3da915d51da5d5, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1539721298}
+    - targetCorrespondingSourceObject: {fileID: 3065712455648138979, guid: 357fd6c1d93433041b3da915d51da5d5, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1539721297}
   m_SourcePrefab: {fileID: 100100000, guid: 357fd6c1d93433041b3da915d51da5d5, type: 3}
+--- !u!1 &1539721296 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 3065712455648138979, guid: 357fd6c1d93433041b3da915d51da5d5, type: 3}
+  m_PrefabInstance: {fileID: 1539721295}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &1539721297
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1539721296}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ec6ddc73c92aa2d4db06ad1c2bab1bd5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Project.HandTracking.LeftTeleportAim
+  hub: {fileID: 0}
+  rig: {fileID: 632934720}
+  teleportation: {fileID: 632934719}
+  controllerTeleport: 0
+  landingLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  maxDistance: 12
+  maxSlope: 40
+--- !u!114 &1539721298
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1539721296}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4373c960dc004c24aab2e06c44bc4688, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::WristInventory
+  wristLift: 0.012
+  wristScale: 0.00045
+  gazeAngle: 16
+  dwellSeconds: 0.65
+  hideDelay: 0.45
+  pinchStart: 0.025
+  pinchRelease: 0.04
+  dragStep: 0.065
+  vrInventoryRotation: 90
+  slideSeconds: 0.16
+  exampleItemsInEditor: 1
 --- !u!1001 &1561956773
 PrefabInstance:
   m_ObjectHideFlags: 0

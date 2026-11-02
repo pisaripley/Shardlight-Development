@@ -16,7 +16,7 @@ public class Carryable : MonoBehaviour, IInteractable
 
     public void Interact()
     {
-        if (XRSettings.isDeviceActive && GetComponent("XRGrabInteractable")) return;   // VR hands handle it
+        if (Project.Forest.PlayerRuntimeMode.VRActive && GetComponent("XRGrabInteractable")) return;   // VR hands handle it
         held = !held;
         rb.useGravity = !held;
         if (!held && Camera.main) rb.linearVelocity = Camera.main.transform.forward * throwSpeed;   // a gentle toss

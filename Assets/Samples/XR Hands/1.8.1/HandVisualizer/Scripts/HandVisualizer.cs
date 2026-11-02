@@ -212,6 +212,13 @@ namespace UnityEngine.XR.Hands.Samples.VisualizerSample
             if (!foundRunningHandSubsystem)
                 return;
 
+            // Only the selected platform's pair may render. Both sets can contain live
+            // tracking drivers, so leaving the unused scene roots active draws two hands.
+            bool androidLayout = m_Subsystem.detectedHandMeshLayout == XRDetectedHandMeshLayout.OpenXRAndroidXR;
+            if (m_MetaQuestLeftHandMesh && m_MetaQuestLeftHandMesh.scene.IsValid()) m_MetaQuestLeftHandMesh.SetActive(!androidLayout);
+            if (m_MetaQuestRightHandMesh && m_MetaQuestRightHandMesh.scene.IsValid()) m_MetaQuestRightHandMesh.SetActive(!androidLayout);
+            if (m_AndroidXRLeftHandMesh && m_AndroidXRLeftHandMesh.scene.IsValid()) m_AndroidXRLeftHandMesh.SetActive(androidLayout);
+            if (m_AndroidXRRightHandMesh && m_AndroidXRRightHandMesh.scene.IsValid()) m_AndroidXRRightHandMesh.SetActive(androidLayout);
             GameObject selectedLeftHandMesh = null, selectedRightHandMesh = null;
             if (m_Subsystem.detectedHandMeshLayout == XRDetectedHandMeshLayout.OpenXRAndroidXR)
             {
@@ -477,6 +484,7 @@ namespace UnityEngine.XR.Hands.Samples.VisualizerSample
                 {
                     var jointTransformReference = skeletonDriver.jointTransformReferences[i];
                     var jointTransform = jointTransformReference.jointTransform;
+                    if (jointTransform == null) continue; // Some platform rigs omit non-rendered joints.
                     var jointID = jointTransformReference.xrHandJointID;
                     AssignJoint(jointID, jointTransform, m_DrawJointsParent.transform);
                 }

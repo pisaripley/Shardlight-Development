@@ -59,6 +59,23 @@ public class ShardlightHUD : MonoBehaviour
     AudioSource audioSrc;
     Sprite circle, ring, rounded;
     Material overlay;
+    RectTransform vrNotice;
+    CanvasGroup noticeFade;
+    TextMeshProUGUI noticeText;
+    float noticeUntil;
+    TextMeshProUGUI vrStatusText, vrWatchHelp;
+    RectTransform vrStatus;
+    public static string WristSummary
+    {
+        get
+        {
+            var h = Instance;
+            string state = WantedSystem.Level > 0 ? "ALERT " + WantedSystem.Level : "CLEAR";
+            string summary = "SHARDS " + shards.Count + " / " + (h ? h.shardNames.Length : 3) + "   |   " + state;
+            var objective = h ? h.objectives.Find(o => !o.done && !o.optional) : null;
+            return objective == null ? summary : summary + "\n" + Regex.Replace(objective.text ?? "", @"[{}\[\]]", "");
+        }
+    }
     GolemGuardAI[] golems = new GolemGuardAI[0];
     ShardPickup[] pickups = new ShardPickup[0];
     readonly List<Blip> blips = new List<Blip>();
@@ -82,7 +99,7 @@ public class ShardlightHUD : MonoBehaviour
     }
     public static void SetObjectiveText(string id, string text) => AddObjective(id, text);
     public static void RemoveObjective(string id) { var h = Instance; if (h) { h.objectives.RemoveAll(o => o.id == id); h.RefreshObjectives(); } }
-    public static void ShowHint(string text, float seconds = 5f) { var h = Instance; if (!h || !h.built) return; h.hint.text = h.Markup(text); h.hintUntil = Time.time + seconds; }
+    public static void ShowHint(string text, float seconds = 5f) { var h = Instance; if (!h || !h.built) return; h.hint.text = h.Markup(text); h.hintUntil = Time.time + seconds; if (h.vr) h.ShowVRNotice(text, seconds); }
     public static void ShowMessage(string text, float seconds = 3f) => ShowHint(text, seconds);
     public static bool HasShard(string name) => shards.Contains(name);
     /// New game: forget collected shards.
@@ -104,7 +121,7 @@ public class ShardlightHUD : MonoBehaviour
     IEnumerator Start()
     {
         yield return null;                                   // let XR start first
-        vr = forceVR || XRSettings.isDeviceActive;
+        vr = forceVR || Project.Forest.PlayerRuntimeMode.VRActive;
         cam = Camera.main ? Camera.main.transform : null;
         circle = Sdf(64, p => p.magnitude - 30f, 0);
         ring = Sdf(128, p => Mathf.Abs(p.magnitude - 60f) - 1.5f, 0);
@@ -157,6 +174,42 @@ public class ShardlightHUD : MonoBehaviour
         var n = Text(frame, "N", 16 * k, gold, FontStyles.Bold); n.alignment = TextAlignmentOptions.Center; northRT = n.rectTransform; northRT.anchorMin = northRT.anchorMax = new Vector2(.5f, .5f); northRT.sizeDelta = new Vector2(24, 24);
 
         built = true;
+        if (vr)
+        {
+            // Persistent information lives on the wrist. Do not render the desktop HUD in the headset.
+            canvasRT.gameObject.SetActive(false);
+            var notice = new GameObject("VR brief notification", typeof(RectTransform), typeof(Canvas), typeof(CanvasGroup));
+            notice.transform.SetParent(transform, false);
+            vrNotice = (RectTransform)notice.transform;
+            vrNotice.sizeDelta = new Vector2(600, 90);
+            notice.GetComponent<Canvas>().renderMode = RenderMode.WorldSpace;
+            notice.GetComponent<Canvas>().worldCamera = Camera.main;
+            noticeFade = notice.GetComponent<CanvasGroup>(); noticeFade.alpha = 0;
+            // Physical world text uses normal depth testing instead of drawing through the world.
+            var previousOverlay = overlay; overlay = null;
+            noticeText = Text(vrNotice, "", 23, textColor);
+            overlay = previousOverlay;
+            noticeText.alignment = TextAlignmentOptions.Center;
+            noticeText.enableAutoSizing = true; noticeText.fontSizeMin = 16;
+            noticeText.rectTransform.anchorMin = Vector2.zero; noticeText.rectTransform.anchorMax = Vector2.one;
+            noticeText.rectTransform.offsetMin = noticeText.rectTransform.offsetMax = Vector2.zero;
+            var status = new GameObject("VR status and objective", typeof(RectTransform), typeof(Canvas));
+            status.transform.SetParent(cam, false);
+            vrStatus = (RectTransform)status.transform;
+            vrStatus.sizeDelta = new Vector2(620, 140);
+            vrStatus.localScale = Vector3.one * .00065f;
+            vrStatus.localPosition = new Vector3(0, -.24f, .8f);
+            vrStatus.localRotation = Quaternion.identity;
+            status.GetComponent<Canvas>().renderMode = RenderMode.WorldSpace;
+            status.GetComponent<Canvas>().worldCamera = Camera.main;
+            vrStatusText = Text(vrStatus, "", 19, textColor);
+            Fill(vrStatusText.rectTransform, 0, 84);
+            vrStatusText.alignment = TextAlignmentOptions.Center;
+            vrStatusText.enableAutoSizing = true; vrStatusText.fontSizeMin = 15;
+            vrWatchHelp = Text(vrStatus, "Raise your left hand to view the watch", 15, gold);
+            Fill(vrWatchHelp.rectTransform, 95, 36);
+            vrWatchHelp.alignment = TextAlignmentOptions.Center;
+        }
         RefreshShards(); RefreshObjectives(); ShowHint(startHint, 8f);
     }
 
@@ -167,6 +220,21 @@ public class ShardlightHUD : MonoBehaviour
         if (!cam && Camera.main) cam = Camera.main.transform;
         if ((golemScan -= Time.deltaTime) <= 0f) { golemScan = 1f; golems = FindObjectsByType<GolemGuardAI>(FindObjectsSortMode.None); pickups = FindObjectsByType<ShardPickup>(FindObjectsSortMode.None); }
         Watch();
+        if (vr)
+        {
+            if (vrStatus)
+            {
+                vrStatus.gameObject.SetActive(!ShardlightMenus.IsOpen);
+                vrStatusText.text = WristSummary;
+                vrWatchHelp.text = WristInventory.Instance ? WristInventory.Instance.TrackingStatus : "Watch starting...";
+            }
+            if (noticeFade)
+            {
+                float remaining = noticeUntil - Time.unscaledTime;
+                noticeFade.alpha = ShardlightMenus.IsOpen ? 0 : Mathf.Clamp01(remaining / .4f);
+            }
+            return;
+        }
         hint.gameObject.SetActive(Time.time < hintUntil);
         int w = WantedSystem.Level;
         alertRow.SetActive(w > 0);
@@ -281,16 +349,17 @@ public class ShardlightHUD : MonoBehaviour
         }
     }
 
-    // VR: HUD floats in front, level with the horizon, and only turns once you look away past the deadzone
-    void LateUpdate()
+    // Notices stay at the world position where they appeared, then fade; they do not chase head turns.
+    void ShowVRNotice(string text, float seconds)
     {
-        if (!built || !vr || !cam) return;
-        float diff = Mathf.DeltaAngle(yaw, cam.eulerAngles.y);
-        if (Mathf.Abs(diff) > vrDeadzone || Time.frameCount < 5) yaw = Mathf.LerpAngle(yaw, cam.eulerAngles.y, Time.frameCount < 5 ? 1f : Time.deltaTime * 4f);
-        var rot = Quaternion.Euler(0, yaw, 0);
-        canvasRT.SetPositionAndRotation(cam.position + rot * Vector3.forward * vrDistance, rot);
+        if (!vrNotice || !cam) return;
+        float scale = Mathf.Max(.001f, Mathf.Abs(cam.lossyScale.x));
+        vrNotice.localScale = Vector3.one * (.00065f * scale);
+        vrNotice.SetPositionAndRotation(cam.position + cam.forward * (.8f * scale) - cam.up * (.2f * scale), cam.rotation);
+        noticeText.text = Markup(text);
+        noticeUntil = Time.unscaledTime + Mathf.Min(seconds, 3.5f);
+        noticeFade.alpha = 1;
     }
-
     // ---------------------------------------------------------------- helpers
     Objective Find(string id) => objectives.Find(o => o.id == id);
     IEnumerator RemoveLater(Objective o) { yield return new WaitForSeconds(2f); objectives.Remove(o); RefreshObjectives(); }

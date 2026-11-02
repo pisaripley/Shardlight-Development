@@ -7,6 +7,7 @@ public class InventoryItem : MonoBehaviour, IInteractable
 {
     public string id = "scroll_1", itemName = "Lore Scroll";
     [TextArea(2, 4)] public string description = "A brittle scroll about the last Keeper.";
+    public Sprite icon;
     public bool collectOnTouch = true;
     public string completesObjective = "";
     public UnityEvent onCollected;
@@ -19,7 +20,8 @@ public class InventoryItem : MonoBehaviour, IInteractable
 
     public void Interact()
     {
-        Inventory.Add(id, itemName, description);
+        if (Inventory.Has(id)) return;
+        Inventory.Add(id, itemName, description, icon: icon);
         ShardlightHUD.PlayChime(2);
         if (completesObjective != "") ShardlightHUD.CompleteObjective(completesObjective);
         onCollected.Invoke();

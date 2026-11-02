@@ -16,24 +16,63 @@ public interface IInteractable { string Prompt { get; } void Interact(); }
 /// Items the player is carrying (shards, scrolls, keys...). Shown in the inventory screen.
 public static class Inventory
 {
-    public class Item { public string id, name, description; }
+    public class Item { public string id, name, description; public Sprite icon; }
     public static readonly List<Item> Items = new List<Item>();
-    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)] static void Reset0() => Items.Clear();
-    public static bool Has(string id) => Items.Exists(i => i.id == id);
-    public static void Add(string id, string name, string description, bool announce = true)
+    static string selectedId;
+    public static event Action<Item> SelectionChanged;
+    public static int SelectedIndex
     {
-        if (Has(id)) return;
-        Items.Add(new Item { id = id, name = name, description = description });
+        get
+        {
+            if (Items.Count == 0) return -1;
+            int index = Items.FindIndex(i => i.id == selectedId);
+            return index >= 0 ? index : 0;
+        }
+    }
+    public static Item SelectedItem => SelectedIndex < 0 ? null : Items[SelectedIndex];
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    static void Reset0() { Items.Clear(); selectedId = null; SelectionChanged = null; iconCache.Clear(); }
+    public static void Clear() { Items.Clear(); selectedId = null; SelectionChanged?.Invoke(null); }
+    public static bool Has(string id) => Items.Exists(i => i.id == id);
+    public static void Select(int index)
+    {
+        if (index < 0 || index >= Items.Count || selectedId == Items[index].id) return;
+        selectedId = Items[index].id;
+        SelectionChanged?.Invoke(Items[index]);
+    }
+    public static void Cycle(int direction)
+    {
+        if (Items.Count == 0) return;
+        Select(((SelectedIndex + direction) % Items.Count + Items.Count) % Items.Count);
+    }
+    static readonly Dictionary<string, Sprite> iconCache = new Dictionary<string, Sprite>();
+    public static Sprite IconFor(string id, string name)
+    {
+        string text = ((id ?? "") + " " + (name ?? "")).ToLowerInvariant();
+        string key = "rune";
+        foreach (var candidate in new[] { "sword", "bow", "bomb", "torch", "key", "potion" })
+            if (text.Contains(candidate)) { key = candidate; break; }
+        if (!iconCache.TryGetValue(key, out var sprite) || !sprite)
+        {
+            sprite = Resources.Load<Sprite>("InventoryIcons/" + key);
+            iconCache[key] = sprite;
+        }
+        return sprite;
+    }
+    public static void Add(string id, string name, string description, bool announce = true, Sprite icon = null)
+    {
+        if (string.IsNullOrWhiteSpace(id) || Has(id)) return;
+        Items.Add(new Item { id = id, name = string.IsNullOrWhiteSpace(name) ? id : name, description = description ?? "", icon = icon ? icon : IconFor(id, name) });
+        if (Items.Count == 1) Select(0);
         if (announce) ShardlightHUD.ShowHint("{" + name + "} added to your satchel", 3f);
     }
 }
-
 /// Shardlight menus for VR + desktop: main menu, pause, settings, inventory, NPC dialogue, and the Interact prompt.
-/// One per scene. Tick "Is Main Menu" in your title scene. Esc/P or left Menu button = pause, Tab/I or Y = inventory.
+/// One per scene. Tick "Is Main Menu" in your title scene. Esc/P or left Menu button = pause. Desktop Tab/I = quick selector; VR = look at left wrist.
 [DefaultExecutionOrder(-40)]
 public class ShardlightMenus : MonoBehaviour
 {
-    enum Screen { None, Main, Pause, Settings, Inventory, Dialogue }
+    enum Screen { None, Main, Pause, Settings, Dialogue }
 
     [Header("Scenes")]
     public bool isMainMenu;
@@ -43,6 +82,9 @@ public class ShardlightMenus : MonoBehaviour
     public Color gold = new Color(1f, .82f, .42f), panel = new Color(.08f, .07f, .09f, .94f), textColor = new Color(.97f, .94f, .87f);
     [Header("VR")]
     public float vrDistance = 1.3f, vrScale = .0011f;
+    [Header("Inventory testing")]
+    [Tooltip("Add example inventory items in Editor Play Mode. Ignored in builds.")]
+    public bool exampleInventoryInEditor = true;
     [Header("Interact")]
     public float interactRange = 2.5f;
 
@@ -58,24 +100,33 @@ public class ShardlightMenus : MonoBehaviour
     RectTransform dlgChoices;
     InputAction pauseIn, invIn, interactIn;
     Behaviour desktopPlayer;
+    WristInventory wristInventory;
     IInteractable focus;
     NPCDialogue npc; int line; float typed;
 
     // ---------------------------------------------------------------- setup
     void Awake() { if (Instance && Instance != this) { enabled = false; return; } Instance = this; }
-    void OnDestroy() { if (Instance == this) { Instance = null; Time.timeScale = 1f; } }
+    void OnDestroy() { pauseIn?.Dispose(); invIn?.Dispose(); interactIn?.Dispose(); if (Instance == this) { Instance = null; Time.timeScale = 1f; } }
 
     void Start()
     {
-        vr = XRSettings.isDeviceActive;
+        vr = Project.Forest.PlayerRuntimeMode.VRActive;
         pauseIn = Action("<Keyboard>/escape", "<Keyboard>/p", "<Gamepad>/start", "<XRController>{LeftHand}/menuButton");
         invIn = Action("<Keyboard>/tab", "<Keyboard>/i", "<Gamepad>/select", "<XRController>{LeftHand}/secondaryButton");
         interactIn = Action("<Keyboard>/e", "<Gamepad>/buttonWest", "<XRController>{RightHand}/triggerButton");
         foreach (var b in FindObjectsByType<MonoBehaviour>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
             if (b.GetType().Name == "DesktopForestPlayer") desktopPlayer = b;
 
-        if (!FindFirstObjectByType<EventSystem>())
-            new GameObject("EventSystem", typeof(EventSystem), typeof(InputSystemUIInputModule));
+        var events = FindFirstObjectByType<EventSystem>();
+        if (!events) events = new GameObject("EventSystem", typeof(EventSystem)).GetComponent<EventSystem>();
+        if (vr)
+        {
+            foreach (var module in events.GetComponents<InputSystemUIInputModule>()) module.enabled = false;
+            if (!events.GetComponent<UnityEngine.XR.Interaction.Toolkit.UI.XRUIInputModule>())
+                events.gameObject.AddComponent<UnityEngine.XR.Interaction.Toolkit.UI.XRUIInputModule>();
+        }
+        else if (!events.GetComponent<InputSystemUIInputModule>())
+            events.gameObject.AddComponent<InputSystemUIInputModule>();
 
         var go = new GameObject("Menu Canvas", typeof(RectTransform), typeof(Canvas));
         go.transform.SetParent(transform, false);
@@ -85,7 +136,7 @@ public class ShardlightMenus : MonoBehaviour
         {
             canvas.renderMode = RenderMode.WorldSpace;
             overlay = new Material(Shader.Find("UI/Default")); overlay.SetFloat("unity_GUIZTestMode", 8f);
-            root.sizeDelta = new Vector2(1400, 900); root.localScale = Vector3.one * vrScale;
+            root.sizeDelta = new Vector2(1400, 900); root.localScale = Vector3.one * vrScale * (Camera.main ? Mathf.Abs(Camera.main.transform.lossyScale.x) : 1f);
             var tracked = Type.GetType("UnityEngine.XR.Interaction.Toolkit.UI.TrackedDeviceGraphicRaycaster, Unity.XR.Interaction.Toolkit");
             if (tracked != null) go.AddComponent(tracked);          // lets controller rays click the buttons
         }
@@ -97,6 +148,17 @@ public class ShardlightMenus : MonoBehaviour
             prompt = Label(root, "", 22, textColor, TextAlignmentOptions.Center);   // "[E] Talk to Tomas" under the crosshair
             Place(prompt.rectTransform, new Vector2(0, -70), new Vector2(700, 40));
             prompt.outlineWidth = .2f;
+        }
+        if (!isMainMenu)
+        {
+            wristInventory = GetComponent<WristInventory>();
+            if (!wristInventory) wristInventory = gameObject.AddComponent<WristInventory>();
+            wristInventory.exampleItemsInEditor = exampleInventoryInEditor;
+            if (!FindFirstObjectByType<Project.HandTracking.LeftTeleportAim>())
+            {
+                var teleport = gameObject.AddComponent<Project.HandTracking.LeftTeleportAim>();
+                teleport.controllerTeleport = false; // Existing XRI controller teleport remains in charge.
+            }
         }
         ApplySettings();
         Show(isMainMenu ? Screen.Main : Screen.None);
@@ -115,12 +177,13 @@ public class ShardlightMenus : MonoBehaviour
     {
         if (pauseIn.WasPressedThisFrame())
         {
+            if (!vr && wristInventory && wristInventory.IsOpen) { wristInventory.ToggleDesktop(); return; }
             if (screen == Screen.None) Show(Screen.Pause);
-            else if (screen == Screen.Settings || screen == Screen.Inventory) Show(back);
+            else if (screen == Screen.Settings) Show(back);
             else if (screen == Screen.Pause) Show(Screen.None);
         }
-        else if (invIn.WasPressedThisFrame() && !isMainMenu && (screen == Screen.None || screen == Screen.Inventory))
-        { back = Screen.None; Show(screen == Screen.Inventory ? Screen.None : Screen.Inventory); }
+        else if (invIn.WasPressedThisFrame() && !vr && wristInventory && screen == Screen.None)
+            wristInventory.ToggleDesktop();
 
         if (screen == Screen.Dialogue) { Dialogue(); return; }
         if (screen != Screen.None) return;
@@ -152,7 +215,7 @@ public class ShardlightMenus : MonoBehaviour
     // ---------------------------------------------------------------- screens
     void Show(Screen s)
     {
-        if (s == Screen.Settings || s == Screen.Inventory) back = screen == Screen.Settings || screen == Screen.Inventory ? back : screen;
+        if (s == Screen.Settings) back = screen == Screen.Settings ? back : screen;
         screen = s;
         if (page) Destroy(page.gameObject);
         bool open = s != Screen.None;
@@ -164,7 +227,9 @@ public class ShardlightMenus : MonoBehaviour
         {
             var cam = Camera.main.transform;
             var flat = Vector3.ProjectOnPlane(cam.forward, Vector3.up).normalized;
-            root.SetPositionAndRotation(cam.position + flat * vrDistance + Vector3.down * .1f, Quaternion.LookRotation(flat));
+            if (flat.sqrMagnitude < .01f) flat = Vector3.forward;
+            float scale = Mathf.Max(.001f, Mathf.Abs(cam.lossyScale.x));
+            root.SetPositionAndRotation(cam.position + flat * vrDistance * scale + Vector3.down * (.1f * scale), Quaternion.LookRotation(flat));
         }
 
         page = Rect("Page", root);
@@ -175,14 +240,14 @@ public class ShardlightMenus : MonoBehaviour
         {
             case Screen.Main:
                 var m = Panel(new Vector2(0, 0), new Vector2(560, 520), "SHARDLIGHT", "Bring back the light of Veyra");
-                Button(m, "Begin", () => { Time.timeScale = 1f; Inventory.Items.Clear(); ShardlightHUD.ResetProgress(); WantedSystem.Clear(); SceneManager.LoadScene(firstScene); });   // fresh game
+                Button(m, "Begin", () => { Time.timeScale = 1f; Inventory.Clear(); ShardlightHUD.ResetProgress(); WantedSystem.Clear(); SceneManager.LoadScene(firstScene); });   // fresh game
                 Button(m, "Settings", () => Show(Screen.Settings));
                 Button(m, "Quit", Quit);
                 break;
             case Screen.Pause:
                 var p = Panel(Vector2.zero, new Vector2(520, 600), "PAUSED", "The ruins wait for you");
                 Button(p, "Resume", () => Show(Screen.None));
-                Button(p, "Satchel (Inventory)", () => Show(Screen.Inventory));
+                Button(p, "Satchel (Inventory)", () => { Show(Screen.None); if (vr) ShardlightHUD.ShowHint("Hold your {left wrist} steady and look at the watch. Touch it with your right fingertip and slide to browse."); else wristInventory.ToggleDesktop(); });
                 Button(p, "Settings", () => Show(Screen.Settings));
                 Button(p, "Restart Area", () => { Time.timeScale = 1f; SceneManager.LoadScene(SceneManager.GetActiveScene().name); });
                 Button(p, "Main Menu", () => { Time.timeScale = 1f; SceneManager.LoadScene(mainMenuScene); });
@@ -194,13 +259,6 @@ public class ShardlightMenus : MonoBehaviour
                 Toggle(st, "Movement", "Smooth", "Teleport", "smoothMove", 1);
                 Toggle(st, "Turning", "Smooth", "Snap", "smoothTurn", 0);
                 Button(st, "Back", () => Show(back));
-                break;
-            case Screen.Inventory:
-                var inv = Panel(Vector2.zero, new Vector2(760, 620), "SATCHEL", Inventory.Items.Count + " item" + (Inventory.Items.Count == 1 ? "" : "s"));
-                var detail = Label(inv, Inventory.Items.Count == 0 ? "Nothing yet. Shards and items you find will appear here." : "Select an item to read about it.", 20, textColor * .85f, TextAlignmentOptions.TopLeft);
-                detail.gameObject.AddComponent<LayoutElement>().preferredHeight = 120;
-                foreach (var it in Inventory.Items) { var item = it; Button(inv, item.name, () => detail.text = "<b><color=#" + ColorUtility.ToHtmlStringRGB(gold) + ">" + item.name + "</color></b>\n" + item.description); }
-                Button(inv, "Close", () => Show(back));
                 break;
             case Screen.Dialogue:
                 var d = Rect("Dialogue", page);
