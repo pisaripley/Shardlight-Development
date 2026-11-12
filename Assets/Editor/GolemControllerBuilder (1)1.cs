@@ -38,6 +38,7 @@ public static class GolemControllerBuilder
         var peek = Pick(new[] { "alert", "suspicious", "cautious", "warrior idle", "warrior_idle", "combatidle", "combat_idle", "battleidle" }, ActionAvoid);
         if (!peek) peek = idle;
         var grab = Pick(new[] { "grab", "pickup", "pick_up", "pick up", "pick", "reach", "interact", "take" }, ActionAvoid);
+        var hit = Pick(new[] { "hit reaction", "hit_reaction", "reaction", "hit", "impact", "hurt", "stagger", "flinch", "damage" }, new[] { "death", "die", "dying" });
         var shoo = Pick(new[] { "shoo", "dismiss", "shaking head", "head shake", "shake", "wave", "gesture", "taunt", "roar", "shout", "yell" }, ActionAvoid);
 
         if (!AssetDatabase.IsValidFolder(Folder)) AssetDatabase.CreateFolder("Assets", "Animations");
@@ -54,6 +55,7 @@ public static class GolemControllerBuilder
         ctrl.AddParameter("LookAround", AnimatorControllerParameterType.Trigger);
         ctrl.AddParameter("Grab", AnimatorControllerParameterType.Trigger);
         ctrl.AddParameter("Shoo", AnimatorControllerParameterType.Trigger);
+        ctrl.AddParameter("Hit", AnimatorControllerParameterType.Trigger);
 
         // IK Pass lets the script turn his head and lean his body (the "peek")
         var layers = ctrl.layers;
@@ -87,6 +89,7 @@ public static class GolemControllerBuilder
         AddAction(sm, loco, "LookAround", look, "LookAround", new Vector3(300, 80, 0));
         AddAction(sm, loco, "Grab", grab, "Grab", new Vector3(300, 160, 0));
         AddAction(sm, loco, "Shoo", shoo, "Shoo", new Vector3(300, 240, 0));
+        AddAction(sm, loco, "Hit", hit, "Hit", new Vector3(300, 320, 0));   // flinch when shot / struck
 
         AssetDatabase.SaveAssets();
 
@@ -118,7 +121,7 @@ public static class GolemControllerBuilder
 
         var sb = new StringBuilder("GolemController built at " + SavePath + "\n\n");
         Line(sb, "Idle", idle); Line(sb, "Walk", walk); Line(sb, "Run", run);
-        Line(sb, "Peek", peek); Line(sb, "LookAround", look); Line(sb, "Grab", grab); Line(sb, "Shoo", shoo);
+        Line(sb, "Peek", peek); Line(sb, "LookAround", look); Line(sb, "Grab", grab); Line(sb, "Shoo", shoo); Line(sb, "Hit", hit);
         sb.Append("\n").Append(assigned);
         sb.Append("\n\nWrong clip picked? Open the controller, click the state, and drag a different clip into Motion.");
         Debug.Log(sb.ToString(), ctrl);
