@@ -4930,6 +4930,29 @@ MonoBehaviour:
   jumpHeight: 1
   maxJumpHeight: 1.2
   airControl: 0.3
+  sprintDrain: 0.2
+  staminaRegen: 0.5
+  staminaDelay: 0.5
+  jumpCost: 0.12
+  aimZoom: 15
+  headBob: 1
+  sprintFov: 8
+  sprintVignette: 0.35
+  lookSmoothing: 0.5
+  motionBlur: 0.3
+  climbing: 1
+  climbSpeed: 1.6
+  climbDrain: 0.12
+  leapCost: 0.2
+  climbLayers:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  vrVignette: 0.6
+  prayerModel: {fileID: 0}
+  prayerClip: {fileID: 0}
+  spiritFill: 0.2
+  spiritFade: 0.004
+  vrPrayButton: <XRController>{RightHand}/secondaryButton
 --- !u!114 &431494610
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -7942,6 +7965,12 @@ MonoBehaviour:
   dragStep: 0.065
   vrInventoryRotation: 90
   slideSeconds: 0.16
+  itemModels: []
+  pullDistance: 0.12
+  maxArrows: 12
+  maxBombs: 3
+  bombRecharge: 20
+  aimDrain: 0.2
   exampleItemsInEditor: 1
 --- !u!1 &681350028
 GameObject:

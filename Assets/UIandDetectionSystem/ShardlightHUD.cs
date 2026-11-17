@@ -54,7 +54,16 @@ public class ShardlightHUD : MonoBehaviour
     public static float StaminaUsedAt = -9f;
     /// True while the player aims a bow or bomb (desktop): zooms the view, slows movement, tightens the reticle.
     public static bool Aiming;
+    /// Spirit 0-1: fills while praying, fades slowly, and speeds up stamina recovery (DesktopForestPlayer).
+    public static float Spirit = .5f;
+    /// True while the player kneels in prayer: the screen gets a soft golden light.
+    public static bool Praying;
     public static void Heal(float amount) => Health = Mathf.Clamp01(Health + amount);
+    [Header("Safety check (start of the level)")]
+    [Tooltip("Pause at the start and ask the player to clear their space, then continue on the battle-cry pose (VR) or Enter (desktop).")]
+    public bool safetyCheck = true;
+    [Tooltip("Seconds the pose must be held.")] public float poseHold = 1f;
+    [Tooltip("The warrior picture on the safety tab. Empty = loads BattleCry from a Resources folder.")] public Texture2D safetyImage;
     [Header("Layout")]
     public bool forceVR;
     public TMP_FontAsset font;
@@ -68,17 +77,21 @@ public class ShardlightHUD : MonoBehaviour
 
     public static ShardlightHUD Instance { get; private set; }
     static readonly List<string> shards = new List<string>();
-    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)] static void Reset0() { Instance = null; shards.Clear(); Health = Stamina = 1f; Exhausted = false; }
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)] static void Reset0() { Instance = null; shards.Clear(); Health = Stamina = 1f; Spirit = .5f; Exhausted = Praying = false; }
 
     bool built, vr, engaged, wasDetected, wasSus, wasCaught, searching;
     StealthLevel level;
     Image hurtImg; float hurt;
+    Image border; float borderFlash; bool wasSusBorder, wasDetBorder; Sprite arcSprite;
+    readonly List<RectTransform> waves = new List<RectTransform>();
+    GameObject safety; Image safetyGlow, safetyIcon; float poseTime, fistsTime, glow, shine = -1f, enterTime; bool entered; float skipTime; UnityEngine.InputSystem.InputAction skipIn; MonoBehaviour player; System.Reflection.MethodInfo handFn;
     CanvasGroup ammoGroup; Image ammoIcon, ammoBar; TextMeshProUGUI ammoText; Sprite arrowIcon, bombIcon; int lastAmmo = -1; float ammoPop;
     Image reticle, hitX; float hitFlash; bool hitKill;
     readonly Dictionary<string, Image> aims = new Dictionary<string, Image>();
     /// Flashes the hit marker on the reticle (red X when something breaks).
     public static void HitMarker(bool kill = false) { var h = Instance; if (h) { h.hitFlash = 1f; h.hitKill = kill; } }
-    Image hpFill, stFill; float hpShown = 1f, stShown = 1f; const float BarW = 220f;
+    public Color spiritColor = new Color(.55f, .82f, 1f);
+    Image hpFill, stFill, spFill; float hpShown = 1f, stShown = 1f, spShown = .5f, prayGlow; const float BarW = 220f;
     float seek, fade, alpha, pop, yaw, range, golemScan, hintUntil;
     Vector3 seenFrom;                                   // eyes of the golem that spotted you (for the photo)
     RawImage photo; Image photoFrame;
@@ -141,6 +154,21 @@ public class ShardlightHUD : MonoBehaviour
     }
     public static bool IsPlayer(Component c) { for (var t = c.transform; t; t = t.parent) if (t.CompareTag("Player")) return true; return false; }
 
+    // Every gameplay scene gets a HUD (and so the safety check), even if nobody placed one.
+    // Skipped in the main menu scene. A HUD you placed yourself is used as-is.
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+    static void AutoAdd()
+    {
+        UnityEngine.SceneManagement.SceneManager.sceneLoaded -= OnScene;
+        UnityEngine.SceneManagement.SceneManager.sceneLoaded += OnScene;
+        OnScene(default, default);
+    }
+    static void OnScene(UnityEngine.SceneManagement.Scene scene, UnityEngine.SceneManagement.LoadSceneMode mode)
+    {
+        if (FindFirstObjectByType<ShardlightHUD>() || (ShardlightMenus.Instance && ShardlightMenus.Instance.isMainMenu)) return;
+        new GameObject("ShardlightHUD (auto)").AddComponent<ShardlightHUD>().objectives.Clear();   // no placeholder objective in scenes you didn't set up
+    }
+
     // ---------------------------------------------------------------- setup
     void Awake() { if (Instance && Instance != this) { enabled = false; return; } Instance = this; audioSrc = gameObject.AddComponent<AudioSource>(); range = radarRange; }
     void OnDestroy() { if (Instance == this) Instance = null; }
@@ -174,14 +202,19 @@ public class ShardlightHUD : MonoBehaviour
         // whole screen: red shade when you take damage (drawn first, so everything else sits on top)
         var hr = Rect("Hurt", canvasRT, Vector2.zero, Vector2.zero, Vector2.zero); hr.anchorMax = Vector2.one;
         hurtImg = Img(hr, Sdf(128, p => .2f - .6f * p.magnitude / 64f, 0), Color.clear);   // light tint in the middle, stronger at the edges
+        // screen border that flashes when you're being noticed (9-sliced so it stays a thin edge at any screen size)
+        var bd = Rect("Alert Border", canvasRT, Vector2.zero, Vector2.zero, Vector2.zero); bd.anchorMax = Vector2.one;
+        border = Img(bd, Sdf(64, p => (32f - Mathf.Max(Mathf.Abs(p.x), Mathf.Abs(p.y))) / 22f - .5f, 24), Color.clear); border.type = Image.Type.Sliced;
+        arcSprite = Sdf(128, p => Mathf.Max(Mathf.Abs((p - new Vector2(0, -90)).magnitude - 100f) - 5f, Mathf.Abs(p.x) - 48f) / 3f, 0);   // glowing curved wave
 
         // top left: health (heart) + stamina (bolt) bars
-        var vt = Rect("Vitals", canvasRT, new Vector2(0, 1), new Vector2(m, -m), new Vector2(BarW + 70f, 78f)); vt.localScale = Vector3.one * k;
+        var vt = Rect("Vitals", canvasRT, new Vector2(0, 1), new Vector2(m, -m), new Vector2(BarW + 70f, 110f)); vt.localScale = Vector3.one * k;
         var vbg = Img(vt, rounded, panel); vbg.type = Image.Type.Sliced;
-        hpFill = Bar(vt, heart, healthColor, 0); stFill = Bar(vt, bolt, staminaColor, 1);
+        var flame = Sdf(64, p => Mathf.Min((p - new Vector2(0, -8)).magnitude - 14f, Poly(p, new[] { new Vector2(-12.5f, -2), new Vector2(2, 28), new Vector2(12.5f, -2) })), 0);   // spirit flame
+        hpFill = Bar(vt, heart, healthColor, 0); stFill = Bar(vt, bolt, staminaColor, 1); spFill = Bar(vt, flame, spiritColor, 2);
 
         // right under it: hint + shards + alert
-        var tl = Rect("Hints", canvasRT, new Vector2(0, 1), new Vector2(m, -m - 88f * k), new Vector2(400, 10));
+        var tl = Rect("Hints", canvasRT, new Vector2(0, 1), new Vector2(m, -m - 120f * k), new Vector2(400, 10));
         var bg = Img(tl, rounded, panel); bg.type = Image.Type.Sliced;
         var v = tl.gameObject.AddComponent<VerticalLayoutGroup>(); v.padding = new RectOffset(20, 18, 14, 14); v.spacing = 8; v.childControlHeight = v.childControlWidth = true; v.childForceExpandHeight = false;
         tl.gameObject.AddComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
@@ -244,6 +277,7 @@ public class ShardlightHUD : MonoBehaviour
             hitX = Img(Rect("Hit marker", reticle.transform, new Vector2(.5f, .5f), Vector2.zero, Vector2.one * 36f), Sdf(64, p => Seg(new Vector2(Mathf.Abs(p.x), Mathf.Abs(p.y)), new Vector2(9, 9), new Vector2(19, 19)) - 2.5f, 0), Color.clear);
         }
 
+        if (safetyCheck) BuildSafety();   // every time a level loads
         built = true;
         if (showSnapshot) PlayerSnapshot.Get();            // start tracking your movement now, so the photo catches you mid-action
         RefreshShards(); RefreshObjectives(); ShowHint(startHint, 8f);
@@ -254,6 +288,7 @@ public class ShardlightHUD : MonoBehaviour
     {
         if (!built) return;
         if (!cam && Camera.main) cam = Camera.main.transform;
+        if (safety) Safety();
         if ((golemScan -= Time.deltaTime) <= 0f) { golemScan = 1f; golems = FindObjectsByType<GolemGuardAI>(FindObjectsSortMode.None); pickups = FindObjectsByType<ShardPickup>(FindObjectsSortMode.None); }
         Watch();
         hint.gameObject.SetActive(Time.time < hintUntil);
@@ -261,8 +296,12 @@ public class ShardlightHUD : MonoBehaviour
         alertRow.SetActive(w > 0);
         for (int i = 0; i < alertPips.Length; i++) alertPips[i].color = i < w ? detected : new Color(1, 1, 1, .15f);
         Discovered();
+        Alerts();
         Vitals();
-        hurt = Mathf.MoveTowards(hurt, 0f, Time.deltaTime * 1.8f); hurtImg.color = new Color(.85f, .05f, .05f, .85f * hurt);
+        hurt = Mathf.MoveTowards(hurt, 0f, Time.deltaTime * 1.8f);
+        prayGlow = Mathf.MoveTowards(prayGlow, Praying ? 1f : 0f, Time.unscaledDeltaTime * 1.2f);
+        hurtImg.color = hurt > .01f ? new Color(.85f, .05f, .05f, .85f * hurt)
+                      : new Color(1f, .85f, .45f, prayGlow * (.22f + .06f * Mathf.Sin(Time.unscaledTime * 2f)));   // red when hurt, warm gold while praying
         Ammo();
         if (reticle)
         {
@@ -305,6 +344,51 @@ public class ShardlightHUD : MonoBehaviour
 
     // SEEKING (yellow, pulsing) while suspected; DISCOVERED (red) when spotted; then SEEKING again, fading
     // red -> white -> grey while they search, and gone once they stop. A photo of you sits underneath.
+    // Being noticed: the screen border flashes yellow (one red flash when you're spotted). Each golem that's onto you
+    // shows as red waves rippling at the screen edge in its direction; closer = brighter, bigger and faster.
+    void Alerts()
+    {
+        float dt = Time.deltaTime, t = Time.time, comfort = vr ? .6f : 1f;   // softer in VR
+        bool sus = level == StealthLevel.Suspicious, det = level == StealthLevel.Detected;
+        if ((sus && !wasSusBorder) || (det && !wasDetBorder)) borderFlash = 1f;
+        wasSusBorder = sus; wasDetBorder = det;
+        borderFlash = Mathf.MoveTowards(borderFlash, 0f, dt * 2.5f);
+        var bc = det ? detected : suspicious;
+        bc.a = Mathf.Max(sus ? .22f + .2f * Mathf.Abs(Mathf.Sin(t * 6f)) : 0f, borderFlash) * comfort;
+        border.color = bc;
+
+        while (waves.Count < golems.Length)
+        {
+            var holder = Rect("Golem Alert", canvasRT, new Vector2(.5f, .5f), Vector2.zero, Vector2.zero);
+            for (int k = 0; k < 3; k++) Img(Rect("Wave", holder, new Vector2(.5f, .5f), Vector2.zero, Vector2.one * 140f), arcSprite, Color.clear);
+            waves.Add(holder);
+        }
+        Vector2 half = canvasRT.rect.size * .5f - Vector2.one * 70f;
+        for (int i = 0; i < waves.Count; i++)
+        {
+            var g = i < golems.Length ? golems[i] : null;
+            var s = g && g.isActiveAndEnabled ? g.CurrentState : GolemGuardAI.State.Patrol;
+            bool chase = s == GolemGuardAI.State.Chase || s == GolemGuardAI.State.Escort;
+            bool aware = g && g.isActiveAndEnabled && (chase || s == GolemGuardAI.State.Suspicious || s == GolemGuardAI.State.Investigate || s == GolemGuardAI.State.Search || g.Suspicion > .15f);
+            float near = aware && cam ? Mathf.Clamp01(1f - (Vector3.Distance(g.transform.position, cam.position) - 2f) / (g.viewDistance * 1.5f)) : 0f;
+            waves[i].gameObject.SetActive(near > 0f);
+            if (near <= 0f) continue;
+            var local = cam.InverseTransformDirection(g.transform.position - cam.position);
+            float ang = Mathf.Atan2(local.x, local.z);                                  // 0 = ahead (top), 90 = right, 180 = behind (bottom)
+            waves[i].localRotation = Quaternion.Euler(0f, 0f, -ang * Mathf.Rad2Deg);
+            float r = 1f / Mathf.Sqrt(Mathf.Pow(Mathf.Sin(ang) / half.x, 2) + Mathf.Pow(Mathf.Cos(ang) / half.y, 2));   // where that direction meets the screen edge
+            float speed = Mathf.Lerp(.6f, 2f, near) * (chase ? 1.4f : 1f), strength = near * (chase ? 1f : .55f) * comfort;
+            for (int k = 0; k < 3; k++)
+            {
+                float ph = Mathf.Repeat(t * speed + k / 3f, 1f);                          // ripples travel out toward the edge
+                var w = (Image)waves[i].GetChild(k).GetComponent<Image>();
+                w.rectTransform.anchoredPosition = new Vector2(0f, r - 50f + 50f * ph);
+                w.rectTransform.localScale = Vector3.one * (.7f + .5f * near) * (.85f + .3f * ph);
+                w.color = new Color(detected.r, detected.g, detected.b, strength * (1f - ph));
+            }
+        }
+    }
+
     void Discovered()
     {
         float dt = Time.deltaTime; bool det = level == StealthLevel.Detected;
@@ -356,6 +440,8 @@ public class ShardlightHUD : MonoBehaviour
         hpShown = Mathf.MoveTowards(hpShown, Health, dt * 1.5f); stShown = Mathf.MoveTowards(stShown, Stamina, dt * 3f);
         SetBar(hpFill, hpShown, Health < .25f ? Color.Lerp(healthColor, Color.white, low * .5f) : healthColor);   // pulses when low
         SetBar(stFill, stShown, Exhausted ? Color.Lerp(staminaColor, Color.grey, .6f) : staminaColor);
+        spShown = Mathf.MoveTowards(spShown, Spirit, dt * 1.5f);
+        SetBar(spFill, spShown, Praying ? Color.Lerp(spiritColor, Color.white, low * .4f) : spiritColor);   // shimmers while you pray
     }
     static void SetBar(Image f, float v, Color c) { f.enabled = v > .02f; f.rectTransform.sizeDelta = new Vector2(BarW * v, 12f); f.color = c; }
 
@@ -368,6 +454,106 @@ public class ShardlightHUD : MonoBehaviour
         back.type = fill.type = Image.Type.Sliced; back.pixelsPerUnitMultiplier = fill.pixelsPerUnitMultiplier = 3.4f;
         return fill;
     }
+    // ---------------------------------------------------------------- safety check
+    // Centre panel before play: clear your space. Continue with the battle cry: one fist raised above your head,
+    // the other fist clenched down at your side (held briefly). Fallback: both fists closed for 3 s. Desktop: Enter.
+    void BuildSafety()
+    {
+        var p = Rect("Safety Check", canvasRT, new Vector2(.5f, .5f), Vector2.zero, new Vector2(980f, 690f));
+        safety = p.gameObject;
+        var bg = Img(p, rounded, new Color(panel.r, panel.g, panel.b, .96f)); bg.type = Image.Type.Sliced;
+        Img(Rect("Line", p, new Vector2(.5f, 1f), new Vector2(0f, -6f), new Vector2(900f, 3f)), null, gold);
+        var title = Text(p, "BEFORE YOU BEGIN", 40, gold, FontStyles.Bold); title.alignment = TextAlignmentOptions.Top; title.characterSpacing = 10; Fill(title.rectTransform, 30, 56);
+        var body = Text(p, Markup("Shardlight is played on your feet. You'll {swing}, {reach}, {throw} and {climb} with your arms, so check your surroundings first.\n\n" +
+            "-  Clear at least {2 m x 2 m} (6.5 x 6.5 ft): an arm's length plus a step in every direction.\n" +
+            "-  Move furniture, pets and people out of the way.\n" +
+            "-  Keep your {boundary} on and stop if you get close to it."), 21, textColor);
+        body.alignment = TextAlignmentOptions.TopLeft;
+        var br = body.rectTransform; br.anchorMin = Vector2.zero; br.anchorMax = Vector2.one; br.offsetMin = new Vector2(60f, 350f); br.offsetMax = new Vector2(-60f, -100f);
+        var how = Text(p, Markup(vr ? "Ready? Give the battle cry: raise one {fist} high above your head and clench the other {fist} down at your side.\n<size=75%><alpha=#BB>Controllers: squeeze both {grips} while you do it, or hold {A} to continue.</size>"
+                                    : "Ready? Press {Enter} to begin."), 22, textColor, FontStyles.Bold);
+        how.alignment = TextAlignmentOptions.Center;
+        var hr = how.rectTransform; hr.anchorMin = Vector2.zero; hr.anchorMax = new Vector2(1f, 0f); hr.offsetMin = new Vector2(60f, 256f); hr.offsetMax = new Vector2(-60f, 346f);
+        // bottom middle: the warrior, with a glow behind him that answers your raised arm
+        safetyGlow = Img(Rect("Glow", p, new Vector2(.5f, 0f), new Vector2(0f, 0f), Vector2.one * 300f), Sdf(128, q => q.magnitude / 44f - .5f, 0), Color.clear);
+        var icon = Soldier();
+        if (icon) { safetyIcon = Img(Rect("Battle Cry", p, new Vector2(.5f, 0f), new Vector2(0f, 26f), Vector2.one * 230f), icon, new Color(.8f, .8f, .8f)); safetyIcon.preserveAspect = true; }
+        foreach (var g in new Graphic[] { safetyGlow, safetyIcon }) if (g) { g.rectTransform.pivot = new Vector2(.5f, .5f); g.rectTransform.anchoredPosition = new Vector2(0f, 141f); }   // scale from the centre
+        Time.timeScale = 0f;
+    }
+
+    // Raising either arm makes the warrior glow; holding the full pose fills it up, then he flashes and play resumes.
+    void Safety()
+    {
+        if (!ShardlightMenus.IsOpen) Time.timeScale = 0f;   // world waits
+        float dt = Time.unscaledDeltaTime, progress, raised = 0f;
+        if (shine >= 0f)   // the finishing flash
+        {
+            shine += dt / .7f;
+            float f = 1f - shine;
+            safetyGlow.color = new Color(1f, .93f, .7f, Mathf.Clamp01(f * 1.2f));
+            safetyGlow.rectTransform.localScale = Vector3.one * (1f + .8f * shine);
+            if (safetyIcon) { safetyIcon.color = Color.Lerp(Color.white, new Color(1f, .95f, .8f), f); safetyIcon.rectTransform.localScale = Vector3.one * (1f + .12f * Mathf.Sin(Mathf.Clamp01(shine) * Mathf.PI)); }
+            if (shine < 1f) return;
+            Destroy(safety); safety = null; skipIn?.Dispose(); skipIn = null;
+            if (!ShardlightMenus.IsOpen) Time.timeScale = 1f;
+            ShowHint(startHint, 8f);
+            return;
+        }
+        if (!vr)   // desktop: Enter makes the warrior glow up, then shine
+        {
+            var kb = UnityEngine.InputSystem.Keyboard.current;
+            if (kb != null && (kb.enterKey.wasPressedThisFrame || kb.numpadEnterKey.wasPressedThisFrame)) entered = true;
+            progress = entered ? (enterTime += dt) / .6f : 0f;
+        }
+        else
+        {
+            bool fl = false, fr = false; Vector3 l = default, r = default;
+            bool hl = PlayerHand(true, out l, out fl), hrd = PlayerHand(false, out r, out fr);
+            float head = cam ? cam.position.y : 0f;
+            bool lUp = hl && fl && l.y > head + .05f, lDown = hl && fl && l.y < head - .45f;
+            bool rUp = hrd && fr && r.y > head + .05f, rDown = hrd && fr && r.y < head - .45f;
+            if ((hl && l.y > head) || (hrd && r.y > head)) raised = .45f;   // either arm up: he starts to glow
+            poseTime = (lUp && rDown) || (rUp && lDown) ? poseTime + dt : Mathf.Max(0f, poseTime - dt * 2f);
+            fistsTime = fl && fr ? fistsTime + dt : 0f;
+            // always-available way through (hands not tracked, or an older player script): hold A for 1.5 s
+            if (skipIn == null) { skipIn = new UnityEngine.InputSystem.InputAction("Safety OK", UnityEngine.InputSystem.InputActionType.Button, "<XRController>{RightHand}/primaryButton"); skipIn.Enable(); }
+            skipTime = skipIn.IsPressed() ? skipTime + dt : 0f;
+            progress = Mathf.Max(Mathf.Max(poseTime / Mathf.Max(.1f, poseHold), fistsTime / 3f), skipTime / 1.5f);
+        }
+        float target = progress > 0f ? .45f + .55f * Mathf.Clamp01(progress) : raised;
+        glow = Mathf.MoveTowards(glow, target, dt * 3f);
+        float pulse = 1f + .05f * Mathf.Sin(Time.unscaledTime * 6f) * glow;
+        safetyGlow.color = new Color(gold.r, gold.g, gold.b, glow * .9f);
+        safetyGlow.rectTransform.localScale = Vector3.one * (.8f + .35f * glow) * pulse;
+        if (safetyIcon) safetyIcon.color = Color.Lerp(new Color(.8f, .8f, .8f), Color.white, glow);
+        if (progress < 1f) return;
+        shine = 0f; Play(null, 2);   // shine, then back to the game
+    }
+
+    // Reads a hand from the player script by name, so the HUD still compiles if that script is an older copy.
+    bool PlayerHand(bool left, out Vector3 pos, out bool fist)
+    {
+        pos = default; fist = false;
+        if (!player)
+            foreach (var b in FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None))
+                if (b.GetType().Name == "DesktopForestPlayer") { player = b; handFn = b.GetType().GetMethod("Hand"); break; }
+        if (!player || handFn == null) return false;
+        var args = new object[] { left, null, null };
+        bool ok = (bool)handFn.Invoke(player, args);
+        pos = (Vector3)args[1]; fist = (bool)args[2];
+        return ok;
+    }
+
+    // Battle-cry warrior icon: Assets/Resources/BattleCry.png (any import settings). Missing = no icon.
+    Sprite Soldier()
+    {
+        var t = safetyImage ? safetyImage : Resources.Load<Texture2D>("BattleCry");
+        if (!t) foreach (var r in Resources.LoadAll<Texture2D>("")) if (r.name.ToLower().Contains("battle")) { t = r; break; }   // e.g. "BattleCry (1)" from a download
+        if (!t) { Debug.LogWarning("[HUD] Safety image not found. Drag BattleCry.png into 'Safety Image' on the HUD, or put it in a folder named Resources.", this); return null; }
+        return Sprite.Create(t, new Rect(0, 0, t.width, t.height), new Vector2(.5f, .5f));
+    }
+
     static float Seg(Vector2 p, Vector2 a, Vector2 b) { Vector2 e = b - a, w = p - a; return (w - e * Mathf.Clamp01(Vector2.Dot(w, e) / e.sqrMagnitude)).magnitude; }
     // signed distance to a polygon (for the lightning bolt icon)
     static float Poly(Vector2 p, Vector2[] v)
@@ -458,7 +644,7 @@ public class ShardlightHUD : MonoBehaviour
     {
         if (!built || !vr || !cam) return;
         float diff = Mathf.DeltaAngle(yaw, cam.eulerAngles.y);
-        if (Mathf.Abs(diff) > vrDeadzone || Time.frameCount < 5) yaw = Mathf.LerpAngle(yaw, cam.eulerAngles.y, Time.frameCount < 5 ? 1f : Time.deltaTime * 4f);
+        if (Mathf.Abs(diff) > vrDeadzone || Time.frameCount < 5) yaw = Mathf.LerpAngle(yaw, cam.eulerAngles.y, Time.frameCount < 5 ? 1f : Time.unscaledDeltaTime * 4f);
         var rot = Quaternion.Euler(0, yaw, 0);
         canvasRT.SetPositionAndRotation(cam.position + rot * Vector3.forward * vrDistance, rot);
     }

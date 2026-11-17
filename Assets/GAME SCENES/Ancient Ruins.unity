@@ -2744,8 +2744,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Project.HandTracking.LeftTeleportAim
   hub: {fileID: 0}
-  rig: {fileID: 0}
-  teleportation: {fileID: 0}
+  rig: {fileID: 1864283713}
+  teleportation: {fileID: 1768845363}
   controllerTeleport: 0
   landingLayers:
     serializedVersion: 2
@@ -2776,6 +2776,10 @@ MonoBehaviour:
   slideSeconds: 0.16
   itemModels: []
   pullDistance: 0.12
+  maxArrows: 12
+  maxBombs: 3
+  bombRecharge: 20
+  aimDrain: 0.2
   exampleItemsInEditor: 1
 --- !u!1001 &519434149
 PrefabInstance:
@@ -8366,6 +8370,17 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 5291959691871055534, guid: 4f6122b02aea27540b60ee221b7415e5, type: 3}
   m_PrefabInstance: {fileID: 1753909588}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &1768845363 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 5260231889667551636, guid: bb40a7ae0b6c4e34790acb5ea084ae09, type: 3}
+  m_PrefabInstance: {fileID: 1884159266}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 01f69dc1cb084aa42b2f2f8cd87bc770, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1001 &1793136648
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -8792,6 +8807,17 @@ MeshRenderer:
   m_SortingOrder: 0
   m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
+--- !u!114 &1864283713 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 35963182558885336, guid: bb40a7ae0b6c4e34790acb5ea084ae09, type: 3}
+  m_PrefabInstance: {fileID: 1884159266}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1864283709}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e0cb9aa70a22847b5925ee5f067c10a9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1001 &1875421792
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -9388,6 +9414,9 @@ MonoBehaviour:
   searchRadius: 11
   healthColor: {r: 0.92, g: 0.27, b: 0.32, a: 1}
   staminaColor: {r: 1, g: 0.83, b: 0.3, a: 1}
+  safetyCheck: 1
+  poseHold: 1
+  safetyImage: {fileID: 0}
   forceVR: 0
   font: {fileID: 0}
   vrDistance: 1.6
@@ -9405,6 +9434,7 @@ MonoBehaviour:
   detectedClip: {fileID: 0}
   caughtClip: {fileID: 0}
   volume: 0.7
+  spiritColor: {r: 0.55, g: 0.82, b: 1, a: 1}
 --- !u!114 &1932704973
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -10687,7 +10717,7 @@ PrefabInstance:
     - target: {fileID: 7257719084983945652, guid: 357fd6c1d93433041b3da915d51da5d5, type: 3}
       propertyPath: detectedClip
       value: 
-      objectReference: {fileID: 8300000, guid: 6c3955a2ccd4aba4bb12924d57d024fa, type: 3}
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
