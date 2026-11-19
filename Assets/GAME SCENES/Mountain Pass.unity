@@ -2380,12 +2380,6 @@ MonoBehaviour:
   dragStep: 0.065
   vrInventoryRotation: 90
   slideSeconds: 0.16
-  itemModels: []
-  pullDistance: 0.12
-  maxArrows: 12
-  maxBombs: 3
-  bombRecharge: 20
-  aimDrain: 0.2
   exampleItemsInEditor: 1
 --- !u!1001 &1561956773
 PrefabInstance:
